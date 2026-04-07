@@ -5,20 +5,33 @@ Built with Python Tkinter + SQLite
 """
 
 import tkinter as tk
-from tkinter import ttk, messagebox, simpledialog
+from tkinter import ttk, messagebox, simpledialog, filedialog
+import csv
 import os, sys
 
 # ── Ensure imports work from project root ─────────────────────────────────────
 sys.path.insert(0, os.path.dirname(__file__))
 
-from core.database       import initialize_db, get_grade
+from core.database       import initialize_db, get_grade, get_app_settings, save_app_settings
 from core.pupil_controller  import (add_pupil, update_pupil, delete_pupil,
                                     get_all_pupils, get_pupil_by_id, next_admission_number)
 from core.marks_controller  import save_marks, get_pupil_marks, get_class_marks
 from core.class_controller  import (get_all_classes, add_class, delete_class,
                                     get_all_subjects, add_subject, delete_subject,
                                     get_dashboard_stats, get_class_label)
-from reports.report_generator import generate_report_card_text, generate_class_results_text
+from reports.report_generator import (
+    generate_report_card_text,
+    generate_class_results_text,
+    get_report_card_context,
+)
+from reports.messaging import (
+    build_report_summary,
+    get_report_delivery_history,
+    log_report_delivery,
+    send_email_with_attachment,
+    send_sms,
+    send_whatsapp,
+)
 
 # ── Colour palette ─────────────────────────────────────────────────────────────
 C = {
@@ -154,6 +167,7 @@ class MainApp(tk.Tk):
             ("📊  Reports",      self._show_reports),
             ("🏫  Classes",      self._show_classes),
             ("📚  Subjects",     self._show_subjects),
+            ("⚙️  Settings",     self._show_settings),
         ]
         self._nav_buttons = []
         for label, cmd in nav:
@@ -713,8 +727,16 @@ class MainApp(tk.Tk):
                      values=["2022","2023","2024","2025","2026"],
                      state="readonly", width=7, font=FONT).grid(row=1, column=5, padx=(0,14))
 
-        self._btn(card1, "🖨️ Generate Report Card", self._gen_report_card,
-                  color=C["accent"]).grid(row=1, column=6, padx=(0,8))
+        self._btn(card1, "📄 Generate PDF", self._gen_report_card,
+              color=C["accent"]).grid(row=1, column=6, padx=(0,8))
+        self._btn(card1, "📧 Email Parent", self._send_report_email,
+              color="#0EA5E9").grid(row=2, column=1, sticky="w", pady=(10, 0), padx=(0, 8))
+        self._btn(card1, "📱 SMS Parent", self._send_report_sms,
+              color="#7C3AED").grid(row=2, column=2, sticky="w", pady=(10, 0), padx=(0, 8))
+        self._btn(card1, "💬 WhatsApp Parent", self._send_report_whatsapp,
+              color="#16A34A").grid(row=2, column=3, sticky="w", pady=(10, 0), padx=(0, 8))
+        tk.Label(card1, text="Uses the pupil's stored parent contact details.", font=FONT_SM,
+             bg=C["card"], fg=C["light"]).grid(row=3, column=0, columnspan=7, sticky="w", pady=(8, 0))
 
         # ── Class Results Sheet ───────────────────────────────────────────────
         card2 = self._card(body, padx=20, pady=16)
@@ -743,8 +765,11 @@ class MainApp(tk.Tk):
                      values=["2022","2023","2024","2025","2026"],
                      state="readonly", width=7, font=FONT).grid(row=1, column=5, padx=(0,14))
 
-        self._btn(card2, "📊 Generate Class Sheet", self._gen_class_sheet,
+        self._btn(card2, "📊 Generate Class PDF", self._gen_class_sheet,
                   color="#7C3AED").grid(row=1, column=6, padx=(0,8))
+
+        self._btn(card2, "📜 Delivery History", self._show_delivery_history,
+              color="#475569").grid(row=2, column=1, sticky="w", pady=(10, 0), padx=(0, 8))
 
         # ── Output log ────────────────────────────────────────────────────────
         card3 = self._card(body, padx=16, pady=12)
@@ -763,26 +788,169 @@ class MainApp(tk.Tk):
         self.log_text.see("end")
         self.log_text.config(state="disabled")
 
-    def _gen_report_card(self):
-        adm  = self.r_adm.get().strip()
-        term = int(self.r_term.get())
-        year = int(self.r_year.get())
+    def _delivery_settings(self):
+        settings = dict(os.environ)
+        settings.update(get_app_settings())
+        return settings
+
+    def _show_settings(self):
+        self._clear_content()
+        self._page_header("Settings", "Configure report delivery credentials and defaults")
+
+        body = tk.Frame(self.content, bg=C["bg"], padx=20, pady=16)
+        body.pack(fill="both", expand=True)
+
+        card = self._card(body, padx=20, pady=18)
+        card.pack(fill="both", expand=True)
+
+        tk.Label(card, text="Messaging Configuration", font=FONT_H2, bg=C["card"], fg=C["text"]).grid(
+            row=0, column=0, columnspan=4, sticky="w", pady=(0, 12)
+        )
+
+        fields = [
+            ("EMAIL_SMTP_HOST", "SMTP Host", 0, 0, False),
+            ("EMAIL_SMTP_PORT", "SMTP Port", 0, 2, False),
+            ("EMAIL_SMTP_USER", "SMTP Username", 1, 0, False),
+            ("EMAIL_SMTP_PASSWORD", "SMTP Password", 1, 2, True),
+            ("EMAIL_FROM", "From Email", 2, 0, False),
+            ("EMAIL_USE_STARTTLS", "Use STARTTLS (1/0)", 2, 2, False),
+            ("TWILIO_ACCOUNT_SID", "Twilio Account SID", 3, 0, False),
+            ("TWILIO_AUTH_TOKEN", "Twilio Auth Token", 3, 2, True),
+            ("TWILIO_FROM_SMS", "Twilio SMS Number", 4, 0, False),
+            ("TWILIO_FROM_WHATSAPP", "Twilio WhatsApp Number", 4, 2, False),
+        ]
+
+        self.settings_vars = {}
+        current = self._delivery_settings()
+
+        for key, label, row, col, is_secret in fields:
+            tk.Label(card, text=label, font=FONT_BOLD, bg=C["card"], fg=C["text"]).grid(
+                row=row * 2 + 1, column=col, sticky="w", padx=(0, 10), pady=(4, 2)
+            )
+            var = tk.StringVar(value=current.get(key, "") or "")
+            self.settings_vars[key] = var
+            tk.Entry(
+                card,
+                textvariable=var,
+                font=FONT,
+                width=30,
+                show="*" if is_secret else "",
+                relief="flat",
+                highlightthickness=1,
+                highlightbackground=C["border"],
+                highlightcolor=C["accent"],
+            ).grid(row=row * 2 + 2, column=col, sticky="w", padx=(0, 18), pady=(0, 10), ipady=4)
+
+        btn_row = tk.Frame(card, bg=C["card"])
+        btn_row.grid(row=11, column=0, columnspan=4, sticky="w", pady=(12, 0))
+        self._btn(btn_row, "💾 Save Settings", self._save_settings, color=C["accent2"]).pack(side="left")
+        tk.Label(
+            card,
+            text="SMS and WhatsApp use a Twilio-compatible provider. Leave fields blank if you want to use environment variables.",
+            font=FONT_SM,
+            bg=C["card"],
+            fg=C["light"],
+            wraplength=700,
+            justify="left",
+        ).grid(row=12, column=0, columnspan=4, sticky="w", pady=(14, 0))
+
+    def _save_settings(self):
+        payload = {key: var.get().strip() for key, var in self.settings_vars.items()}
+        ok, msg = save_app_settings(payload)
+        if ok:
+            self._log("Delivery settings saved.")
+            messagebox.showinfo("Settings Saved", msg)
+        else:
+            messagebox.showerror("Settings Error", msg)
+
+    def _get_selected_report_context(self):
+        adm = self.r_adm.get().strip()
         if not adm:
             messagebox.showwarning("Input Required", "Enter pupil admission number.")
-            return
+            return None, None, None
+
         from core.database import get_connection
+
         conn = get_connection()
-        row  = conn.execute("SELECT id FROM pupil WHERE admission_no=?", (adm,)).fetchone()
+        row = conn.execute(
+            "SELECT id, first_name, last_name, parent_name, parent_phone, parent_email FROM pupil WHERE admission_no=?",
+            (adm,),
+        ).fetchone()
         conn.close()
+
         if not row:
             messagebox.showerror("Not Found", f"No pupil with admission no: {adm}")
-            return
-        path, msg = generate_report_card_text(row['id'], term, year)
-        if path:
-            self._log(msg)
-            messagebox.showinfo("Generated", f"Report card saved!\n{path}")
-        else:
+            return None, None, None
+
+        term = int(self.r_term.get())
+        year = int(self.r_year.get())
+        context = get_report_card_context(row["id"], term, year)
+        if not context:
+            messagebox.showerror("No Marks", "No marks found for this term/year.")
+            return None, None, None
+
+        pdf_path, msg = generate_report_card_text(row["id"], term, year)
+        if not pdf_path:
             messagebox.showerror("Error", msg)
+            return None, None, None
+
+        return row, context, pdf_path
+
+    def _gen_report_card(self):
+        row, context, path = self._get_selected_report_context()
+        if not path or not row or not context:
+            return
+        self._log(f"Report card saved: {os.path.basename(path)}")
+        messagebox.showinfo("Generated", f"PDF report card saved!\n{path}")
+
+    def _send_report_email(self):
+        row, context, pdf_path = self._get_selected_report_context()
+        if not pdf_path or not row or not context:
+            return
+
+        recipient = (row.get("parent_email") or "").strip()
+        if not recipient:
+            messagebox.showwarning("Missing Email", "This pupil has no parent email saved.")
+            return
+
+        subject = f"PRMS Report Card - {context['pupil']['first_name']} {context['pupil']['last_name']}"
+        body = build_report_summary(context) + "\n\nAttached is the PDF report card."
+        ok, msg = send_email_with_attachment(recipient, subject, body, pdf_path, self._delivery_settings())
+        log_report_delivery(row["id"], "REPORT_CARD", "EMAIL", recipient, "SENT" if ok else "FAILED", msg)
+        if ok:
+            self._log(f"Email sent to {recipient}.")
+            messagebox.showinfo("Email Sent", msg)
+        else:
+            messagebox.showerror("Email Failed", msg)
+
+    def _send_report_sms(self):
+        self._send_report_message("SMS")
+
+    def _send_report_whatsapp(self):
+        self._send_report_message("WHATSAPP")
+
+    def _send_report_message(self, channel):
+        row, context, pdf_path = self._get_selected_report_context()
+        if not pdf_path or not row or not context:
+            return
+
+        phone = (row.get("parent_phone") or "").strip()
+        if not phone:
+            messagebox.showwarning("Missing Phone", "This pupil has no parent phone saved.")
+            return
+
+        body = build_report_summary(context)
+        if channel == "SMS":
+            ok, msg = send_sms(phone, body, self._delivery_settings())
+        else:
+            ok, msg = send_whatsapp(phone, body, self._delivery_settings())
+
+        log_report_delivery(row["id"], "REPORT_CARD", channel, phone, "SENT" if ok else "FAILED", msg)
+        if ok:
+            self._log(f"{channel.title()} sent to {phone}.")
+            messagebox.showinfo(f"{channel.title()} Sent", msg)
+        else:
+            messagebox.showerror(f"{channel.title()} Failed", msg)
 
     def _gen_class_sheet(self):
         if not self._rc_class_ids:
@@ -801,6 +969,248 @@ class MainApp(tk.Tk):
             messagebox.showinfo("Generated", f"Class results saved!\n{path}")
         else:
             messagebox.showerror("Error", msg)
+
+    def _show_delivery_history(self):
+        self._clear_content()
+        self._page_header("Delivery History", "View report cards sent to parents and guardians")
+
+        body = tk.Frame(self.content, bg=C["bg"], padx=20, pady=16)
+        body.pack(fill="both", expand=True)
+
+        toolbar = tk.Frame(body, bg=C["bg"])
+        toolbar.pack(fill="x", pady=(0, 10))
+        tk.Label(toolbar, text="Pupil:", font=FONT_BOLD, bg=C["bg"], fg=C["text"]).pack(side="left", padx=(0, 4))
+        self.delivery_search_var = tk.StringVar()
+        tk.Entry(
+            toolbar,
+            textvariable=self.delivery_search_var,
+            font=FONT,
+            width=22,
+            relief="flat",
+            highlightthickness=1,
+            highlightbackground=C["border"],
+            highlightcolor=C["accent"],
+        ).pack(side="left", padx=(0, 12), ipady=4)
+
+        tk.Label(toolbar, text="Method:", font=FONT_BOLD, bg=C["bg"], fg=C["text"]).pack(side="left", padx=(0, 4))
+        self.delivery_method_var = tk.StringVar(value="All")
+        ttk.Combobox(
+            toolbar,
+            textvariable=self.delivery_method_var,
+            values=["All", "EMAIL", "SMS", "WHATSAPP"],
+            state="readonly",
+            width=12,
+            font=FONT,
+        ).pack(side="left", padx=(0, 12))
+
+        tk.Label(toolbar, text="Status:", font=FONT_BOLD, bg=C["bg"], fg=C["text"]).pack(side="left", padx=(0, 4))
+        self.delivery_status_var = tk.StringVar(value="All")
+        ttk.Combobox(
+            toolbar,
+            textvariable=self.delivery_status_var,
+            values=["All", "SENT", "FAILED"],
+            state="readonly",
+            width=10,
+            font=FONT,
+        ).pack(side="left", padx=(0, 12))
+
+        self._btn(toolbar, "Filter", self._load_delivery_history, color=C["accent"]).pack(side="left", padx=(0, 8))
+        self._btn(toolbar, "Clear", self._clear_delivery_filters, color="#6B7280").pack(side="left", padx=(0, 8))
+        self._btn(toolbar, "↺ Refresh", self._load_delivery_history, color="#6B7280").pack(side="left")
+        self._btn(toolbar, "CSV", self._export_delivery_history_csv, color="#0F766E").pack(side="right", padx=(8, 0))
+        self._btn(toolbar, "PDF", self._export_delivery_history_pdf, color="#7C3AED").pack(side="right", padx=(8, 0))
+        self._btn(toolbar, "Open Export Folder", self._open_reports_folder, color="#475569").pack(side="right", padx=(8, 0))
+
+        tbl_wrap = tk.Frame(body, bg=C["card"])
+        tbl_wrap.pack(fill="both", expand=True)
+
+        cols = ("created_at", "pupil", "admission_no", "method", "recipient", "status", "report_type", "detail")
+        self.delivery_tree = self._make_treeview(tbl_wrap, cols, heights=18)
+        headings = [
+            ("created_at", 150, "Date/Time"),
+            ("pupil", 180, "Pupil"),
+            ("admission_no", 100, "Adm. No."),
+            ("method", 100, "Method"),
+            ("recipient", 160, "Recipient"),
+            ("status", 90, "Status"),
+            ("report_type", 110, "Report Type"),
+            ("detail", 260, "Details"),
+        ]
+        for col, width, label in headings:
+            self.delivery_tree.heading(col, text=label)
+            self.delivery_tree.column(col, width=width, anchor="w")
+        self.delivery_tree.bind("<Double-1>", self._show_delivery_row_details)
+
+        self._load_delivery_history()
+
+    def _get_filtered_delivery_rows(self):
+        return get_report_delivery_history(
+            pupil_search=getattr(self, "delivery_search_var", tk.StringVar()).get().strip() or None,
+            delivery_method=getattr(self, "delivery_method_var", tk.StringVar(value="All")).get(),
+            status=getattr(self, "delivery_status_var", tk.StringVar(value="All")).get(),
+        )
+
+    def _load_delivery_history(self):
+        if not hasattr(self, "delivery_tree"):
+            return
+        self.delivery_tree.delete(*self.delivery_tree.get_children())
+        rows = self._get_filtered_delivery_rows()
+        for index, row in enumerate(rows):
+            tag = "even" if index % 2 == 0 else "odd"
+            pupil_name = "—"
+            if row.get("first_name") or row.get("last_name"):
+                pupil_name = f"{row.get('first_name', '')} {row.get('last_name', '')}".strip()
+            self.delivery_tree.insert(
+                "",
+                "end",
+                iid=str(row["id"]),
+                values=(
+                    row.get("created_at") or "—",
+                    pupil_name,
+                    row.get("admission_no") or "—",
+                    row.get("delivery_method") or "—",
+                    row.get("recipient") or "—",
+                    row.get("status") or "—",
+                    row.get("report_type") or "—",
+                    row.get("detail") or "—",
+                ),
+                tags=(tag,),
+            )
+
+    def _show_delivery_row_details(self, event):
+        item = self.delivery_tree.identify_row(event.y)
+        if not item:
+            return
+
+        row = None
+        for candidate in self._get_filtered_delivery_rows():
+            if str(candidate.get("id")) == str(item):
+                row = candidate
+                break
+        if not row:
+            return
+
+        pupil_name = "—"
+        if row.get("first_name") or row.get("last_name"):
+            pupil_name = f"{row.get('first_name', '')} {row.get('last_name', '')}".strip()
+
+        lines = [
+            ("Date/Time", row.get("created_at") or "—"),
+            ("Pupil", pupil_name),
+            ("Admission No.", row.get("admission_no") or "—"),
+            ("Report Type", row.get("report_type") or "—"),
+            ("Delivery Method", row.get("delivery_method") or "—"),
+            ("Status", row.get("status") or "—"),
+            ("Recipient", row.get("recipient") or "—"),
+            ("Parent Name", row.get("parent_name") or "—"),
+            ("Parent Phone", row.get("parent_phone") or "—"),
+            ("Parent Email", row.get("parent_email") or "—"),
+            ("Details", row.get("detail") or "—"),
+        ]
+
+        dialog = tk.Toplevel(self)
+        dialog.title("Delivery Details")
+        dialog.geometry("520x420")
+        dialog.resizable(False, False)
+        dialog.configure(bg=C["bg"])
+        dialog.transient(self)
+        dialog.grab_set()
+
+        card = self._card(dialog, padx=18, pady=16)
+        card.pack(fill="both", expand=True, padx=16, pady=16)
+        tk.Label(card, text="Delivery Details", font=FONT_H2, bg=C["card"], fg=C["text"]).pack(anchor="w", pady=(0, 10))
+
+        detail_frame = tk.Frame(card, bg=C["card"])
+        detail_frame.pack(fill="both", expand=True)
+
+        for label, value in lines:
+            row_frame = tk.Frame(detail_frame, bg=C["card"])
+            row_frame.pack(fill="x", anchor="w", pady=3)
+            tk.Label(row_frame, text=f"{label}:", font=FONT_BOLD, bg=C["card"], fg=C["text"], width=16, anchor="w").pack(side="left")
+            tk.Label(row_frame, text=value, font=FONT, bg=C["card"], fg=C["text"], wraplength=340, justify="left").pack(side="left", fill="x", expand=True)
+
+        self._btn(card, "Close", dialog.destroy, color="#6B7280").pack(anchor="e", pady=(12, 0))
+
+    def _export_delivery_history_csv(self):
+        rows = self._get_filtered_delivery_rows()
+        if not rows:
+            messagebox.showinfo("No Data", "There are no delivery records to export.")
+            return
+
+        path = filedialog.asksaveasfilename(
+            parent=self,
+            title="Export Delivery History to CSV",
+            defaultextension=".csv",
+            filetypes=[("CSV files", "*.csv")],
+            initialfile="delivery_history.csv",
+        )
+        if not path:
+            return
+
+        with open(path, "w", newline="", encoding="utf-8-sig") as handle:
+            writer = csv.writer(handle)
+            writer.writerow(["Date/Time", "Pupil", "Admission No.", "Method", "Recipient", "Status", "Report Type", "Details"])
+            for row in rows:
+                pupil_name = "—"
+                if row.get("first_name") or row.get("last_name"):
+                    pupil_name = f"{row.get('first_name', '')} {row.get('last_name', '')}".strip()
+                writer.writerow([
+                    row.get("created_at") or "",
+                    pupil_name,
+                    row.get("admission_no") or "",
+                    row.get("delivery_method") or "",
+                    row.get("recipient") or "",
+                    row.get("status") or "",
+                    row.get("report_type") or "",
+                    row.get("detail") or "",
+                ])
+
+        messagebox.showinfo("Exported", f"Delivery history exported to:\n{path}")
+        self._open_exported_file(path)
+
+    def _export_delivery_history_pdf(self):
+        rows = self._get_filtered_delivery_rows()
+        if not rows:
+            messagebox.showinfo("No Data", "There are no delivery records to export.")
+            return
+
+        path = filedialog.asksaveasfilename(
+            parent=self,
+            title="Export Delivery History to PDF",
+            defaultextension=".pdf",
+            filetypes=[("PDF files", "*.pdf")],
+            initialfile="delivery_history.pdf",
+        )
+        if not path:
+            return
+
+        from reports.messaging import export_delivery_history_pdf
+
+        export_delivery_history_pdf(path, rows)
+        messagebox.showinfo("Exported", f"Delivery history exported to:\n{path}")
+        self._open_exported_file(path)
+
+    def _open_exported_file(self, path):
+        try:
+            os.startfile(path)
+        except Exception:
+            messagebox.showinfo("Exported", f"File saved here:\n{path}")
+
+    def _open_reports_folder(self):
+        folder = os.path.join(os.path.dirname(__file__), "reports_output")
+        try:
+            os.startfile(folder)
+        except Exception:
+            messagebox.showinfo("Reports Folder", f"Reports folder:\n{folder}")
+
+    def _clear_delivery_filters(self):
+        if hasattr(self, "delivery_search_var"):
+            self.delivery_search_var.set("")
+        if hasattr(self, "delivery_method_var"):
+            self.delivery_method_var.set("All")
+        if hasattr(self, "delivery_status_var"):
+            self.delivery_status_var.set("All")
+        self._load_delivery_history()
 
     # ═══════════════════════════════════════════════════════════════════════════
     #  CLASSES
@@ -994,6 +1404,7 @@ class PupilForm(tk.Toplevel):
         self.v_dob    = tk.StringVar()
         self.v_parent = tk.StringVar()
         self.v_phone  = tk.StringVar()
+        self.v_email  = tk.StringVar()
         self.v_class  = tk.StringVar()
 
         lbl("Admission No.", 0, 0); ent(self.v_adm,    0, 1)
@@ -1021,9 +1432,10 @@ class PupilForm(tk.Toplevel):
 
         lbl("Parent/Guardian", 6, 0); ent(self.v_parent, 6, 1)
         lbl("Parent Phone",    7, 0); ent(self.v_phone,  7, 1)
+        lbl("Parent Email",    8, 0); ent(self.v_email,  8, 1, w=26)
 
         btn_row = tk.Frame(body, bg=C["bg"])
-        btn_row.grid(row=8, column=0, columnspan=3, pady=(16, 0))
+        btn_row.grid(row=9, column=0, columnspan=3, pady=(16, 0))
         tk.Button(btn_row, text="💾 Save", font=FONT_BOLD,
                   bg=C["accent2"], fg="white", relief="flat",
                   cursor="hand2", padx=20, pady=8, command=self._save).pack(side="left", padx=(0, 8))
@@ -1040,6 +1452,7 @@ class PupilForm(tk.Toplevel):
         self.v_dob.set(p.get('date_of_birth') or "")
         self.v_parent.set(p.get('parent_name') or "")
         self.v_phone.set(p.get('parent_phone') or "")
+        self.v_email.set(p.get('parent_email') or "")
         if p.get('class_id') and p['class_id'] in self._class_ids:
             idx = self._class_ids.index(p['class_id'])
             self.v_class.set(self._class_labels[idx])
@@ -1052,6 +1465,7 @@ class PupilForm(tk.Toplevel):
         dob    = self.v_dob.get().strip() or None
         parent = self.v_parent.get().strip() or None
         phone  = self.v_phone.get().strip() or None
+        email  = self.v_email.get().strip() or None
 
         if not fname or not lname or not adm:
             messagebox.showwarning("Required Fields", "Admission No., First Name, and Last Name are required.")
@@ -1062,9 +1476,9 @@ class PupilForm(tk.Toplevel):
             cid = self._class_ids[self._class_labels.index(self.v_class.get())]
 
         if self.pupil_data:
-            ok, msg = update_pupil(self.pupil_data['id'], fname, lname, gender, dob, cid, parent, phone)
+            ok, msg = update_pupil(self.pupil_data['id'], fname, lname, gender, dob, cid, parent, phone, email)
         else:
-            ok, msg = add_pupil(adm, fname, lname, gender, dob, cid, parent, phone)
+            ok, msg = add_pupil(adm, fname, lname, gender, dob, cid, parent, phone, email)
 
         if ok:
             if self.on_save: self.on_save()

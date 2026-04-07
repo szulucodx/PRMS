@@ -36,9 +36,19 @@ PRMS/
 │   ├── marks_controller.py  ← Marks entry & retrieval
 │   └── class_controller.py  ← Class & subject management
 ├── reports/
-│   └── report_generator.py  ← Report card & class results generator
+│   ├── report_generator.py  ← Report card & class results generator
+│   └── messaging.py         ← Email/SMS/WhatsApp delivery helpers
 └── reports_output/          ← Generated report files saved here
 ```
+
+Generated report cards and class results are saved as both `.txt` and `.pdf` files in `reports_output/`.
+
+To use parent sharing features, set these environment variables before launching the app:
+- `EMAIL_SMTP_HOST`, `EMAIL_SMTP_PORT`, `EMAIL_SMTP_USER`, `EMAIL_SMTP_PASSWORD`
+- `EMAIL_FROM` and optionally `EMAIL_USE_STARTTLS`
+- `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_FROM_SMS`, `TWILIO_FROM_WHATSAPP`
+
+SMS and WhatsApp delivery use a Twilio-compatible API. Parent email and phone details are stored on the pupil record.
 
 ---
 
@@ -48,8 +58,10 @@ PRMS/
 |-----------------|------------------------------------------------------------|
 | Dashboard       | Live stats: pupils, classes, subjects, marks entered        |
 | Pupil Register  | Add / edit / delete pupils, search by name or admission no. |
-| Marks Entry     | Double-click cell to enter CA (40) + Exam (60) per subject  |
-| Reports         | Individual report cards + Class results sheets (.txt)       |
+| Marks Entry     | Add marks with one popup or edit CA / Exam per subject      |
+| Reports         | Individual report cards + Class results sheets (.txt/.pdf)  |
+| Sharing         | Email, SMS, and WhatsApp delivery for parent/guardian results |
+| Settings        | In-app screen for saving email/SMS/WhatsApp credentials      |
 | Classes         | Add Grade 1–12 classes with sections (A/B/C/D) and year    |
 | Subjects        | Add / delete school subjects                                |
 

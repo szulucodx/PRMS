@@ -6,14 +6,14 @@ CRUD operations for pupil registration and management
 from core.database import get_connection
 
 
-def add_pupil(admission_no, first_name, last_name, gender, dob, class_id, parent_name, parent_phone):
+def add_pupil(admission_no, first_name, last_name, gender, dob, class_id, parent_name, parent_phone, parent_email):
     conn = get_connection()
     try:
         conn.execute("""
             INSERT INTO pupil (admission_no, first_name, last_name, gender, date_of_birth,
-                               class_id, parent_name, parent_phone)
-            VALUES (?,?,?,?,?,?,?,?)
-        """, (admission_no, first_name, last_name, gender, dob, class_id, parent_name, parent_phone))
+                               class_id, parent_name, parent_phone, parent_email)
+            VALUES (?,?,?,?,?,?,?,?,?)
+        """, (admission_no, first_name, last_name, gender, dob, class_id, parent_name, parent_phone, parent_email))
         conn.commit()
         return True, "Pupil registered successfully."
     except Exception as e:
@@ -22,14 +22,14 @@ def add_pupil(admission_no, first_name, last_name, gender, dob, class_id, parent
         conn.close()
 
 
-def update_pupil(pupil_id, first_name, last_name, gender, dob, class_id, parent_name, parent_phone):
+def update_pupil(pupil_id, first_name, last_name, gender, dob, class_id, parent_name, parent_phone, parent_email):
     conn = get_connection()
     try:
         conn.execute("""
             UPDATE pupil SET first_name=?, last_name=?, gender=?, date_of_birth=?,
-                             class_id=?, parent_name=?, parent_phone=?
+                             class_id=?, parent_name=?, parent_phone=?, parent_email=?
             WHERE id=?
-        """, (first_name, last_name, gender, dob, class_id, parent_name, parent_phone, pupil_id))
+        """, (first_name, last_name, gender, dob, class_id, parent_name, parent_phone, parent_email, pupil_id))
         conn.commit()
         return True, "Pupil updated."
     except Exception as e:

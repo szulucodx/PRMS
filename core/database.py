@@ -20,6 +20,11 @@ def initialize_db():
     conn = get_connection()
     c = conn.cursor()
 
+    def ensure_column(table, column, column_type):
+        existing = {row[1] for row in conn.execute(f"PRAGMA table_info({table})").fetchall()}
+        if column not in existing:
+            conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {column_type}")
+
     # ── Classes ──────────────────────────────────────────────────────────────
     c.execute("""
         CREATE TABLE IF NOT EXISTS class (
@@ -62,9 +67,11 @@ def initialize_db():
             class_id        INTEGER REFERENCES class(id) ON DELETE SET NULL,
             parent_name     TEXT,
             parent_phone    TEXT,
+            parent_email    TEXT,
             created_at      TEXT    DEFAULT (datetime('now'))
         )
     """)
+    ensure_column("pupil", "parent_email", "TEXT")
 
     # ── Marks ─────────────────────────────────────────────────────────────────
     c.execute("""
@@ -91,6 +98,26 @@ def initialize_db():
             password    TEXT    NOT NULL,
             role        TEXT    NOT NULL CHECK(role IN ('admin','teacher')),
             full_name   TEXT    NOT NULL
+        )
+    """)
+
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS report_delivery (
+            id              INTEGER PRIMARY KEY AUTOINCREMENT,
+            pupil_id        INTEGER REFERENCES pupil(id) ON DELETE CASCADE,
+            report_type     TEXT NOT NULL,
+            delivery_method TEXT NOT NULL,
+            recipient       TEXT,
+            status          TEXT NOT NULL,
+            detail          TEXT,
+            created_at      TEXT DEFAULT (datetime('now'))
+        )
+    """)
+
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS app_settings (
+            key     TEXT PRIMARY KEY,
+            value   TEXT
         )
     """)
 
@@ -125,6 +152,34 @@ def initialize_db():
 
     conn.commit()
     conn.close()
+
+
+def get_app_settings():
+    conn = get_connection()
+    try:
+        rows = conn.execute("SELECT key, value FROM app_settings").fetchall()
+        return {row["key"]: row["value"] for row in rows}
+    finally:
+        conn.close()
+
+
+def save_app_settings(settings):
+    conn = get_connection()
+    try:
+        for key, value in settings.items():
+            conn.execute(
+                """
+                INSERT INTO app_settings (key, value) VALUES (?, ?)
+                ON CONFLICT(key) DO UPDATE SET value=excluded.value
+                """,
+                (key, value),
+            )
+        conn.commit()
+        return True, "Settings saved."
+    except Exception as exc:
+        return False, str(exc)
+    finally:
+        conn.close()
 
 
 # ── Grade helper ──────────────────────────────────────────────────────────────
