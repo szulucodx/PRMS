@@ -1,0 +1,35 @@
+==============================================================
+            PUPIL RESULTS MANAGEMENT SYSTEM (PRMS)            
+            ZAMBIAN SCHOOL — ACADEMIC REPORT CARD             
+==============================================================
+
+  Name        : Thandiwe Banda
+  Admission # : PRMS0001
+  Class       : Grade 7A
+  Term        : 1    Year : 2024
+  Gender      : Female
+
+==============================================================
+  SUBJECT                      CA(40)   EXAM(60)   TOTAL   GRADE  REMARK
+==============================================================
+  Civic Education              30.0     50.0       80.0    A      Distinction
+  Computer Studies             31.0     51.0       82.0    A      Distinction
+  Creative & Technology Studies 32.0     52.0       84.0    A      Distinction
+  English Language             33.0     53.0       86.0    A      Distinction
+  Mathematics                  34.0     54.0       88.0    A      Distinction
+==============================================================
+  TOTAL MARKS                                      420.0  
+  AVERAGE                                          84.0    A      Distinction
+==============================================================
+
+  CLASS TEACHER'S REMARKS : _______________________________________
+
+  HEAD TEACHER'S REMARKS  : _______________________________________
+
+  HEAD TEACHER SIGNATURE  : ________________  DATE: _______________
+
+  PARENT/GUARDIAN SIGN    : ________________  DATE: _______________
+
+==============================================================
+  NOTE: CA = Continuous Assessment (40%) | EXAM = End-of-Term (60%)
+==============================================================
