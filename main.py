@@ -443,6 +443,14 @@ class MainApp(tk.Tk):
         self._btn(filt, "💾 Save All", self._save_all_marks,
                   color=C["accent2"]).grid(row=0, column=9)
 
+        tk.Label(
+            filt,
+            text="Tip: Select a pupil and click Add Marks, or double-click a pupil row for one-step entry.",
+            font=FONT_SM,
+            bg=C["card"],
+            fg=C["light"]
+        ).grid(row=1, column=0, columnspan=10, sticky="w", pady=(10, 0))
+
         # Marks table
         tbl_wrap = tk.Frame(body, bg=C["card"])
         tbl_wrap.pack(fill="both", expand=True)
@@ -464,29 +472,28 @@ class MainApp(tk.Tk):
         self.marks_tree.configure(yscrollcommand=sb.set)
         self.marks_tree.pack(side="left", fill="both", expand=True)
         sb.pack(side="right", fill="y")
-        self.marks_tree.bind("<Double-1>", self._edit_marks_cell)
+        self.marks_tree.bind("<Double-1>", self._open_add_marks_on_double_click)
+
+        actions = tk.Frame(body, bg=C["bg"], pady=8)
+        actions.pack(fill="x")
+        self._btn(actions, "➕ Add Marks", self._add_marks_for_selected, color=C["accent"]).pack(side="left")
+        self._btn(actions, "✏️ Edit Selected CA", self._edit_selected_ca, color="#D97706").pack(side="left")
+        self._btn(actions, "✏️ Edit Selected Exam", self._edit_selected_exam, color="#7C3AED").pack(side="left", padx=(8, 0))
 
         self._marks_data = {}  # pupil_id -> {ca, exam}
 
     def _load_marks_table(self):
-        idx = self.m_class_var.get()
-        if not idx or not self.m_class_ids:
-            messagebox.showwarning("Select Class", "Please select a class first.")
-            return
-        ci   = self.m_class_var.get()
-        cid  = self.m_class_ids[list(self.marks_tree.master.master.children.values())[0].master.__class__.__name__ and
-                                 [f"Grade {c['grade']}{c['section']} ({c['year']})" for c in get_all_classes()].index(ci)
-                                 if ci in [f"Grade {c['grade']}{c['section']} ({c['year']})" for c in get_all_classes()] else 0]
-
         classes = get_all_classes()
         class_labels = [f"Grade {c['grade']}{c['section']} ({c['year']})" for c in classes]
         if self.m_class_var.get() not in class_labels:
+            messagebox.showwarning("Select Class", "Please select a class first.")
             return
         cid = classes[class_labels.index(self.m_class_var.get())]['id']
 
         subjects = get_all_subjects()
         subj_labels = [s['name'] for s in subjects]
         if self.m_subj_var.get() not in subj_labels:
+            messagebox.showwarning("Select Subject", "Please select a subject first.")
             return
         sid = subjects[subj_labels.index(self.m_subj_var.get())]['id']
 
@@ -508,6 +515,142 @@ class MainApp(tk.Tk):
                                           "class_id": cid, "subject_id": sid,
                                           "term": term, "year": year}
 
+    def _prompt_mark(self, title, current, max_value):
+        return simpledialog.askfloat(
+            title,
+            f"Enter {title}:",
+            initialvalue=current,
+            minvalue=0,
+            maxvalue=max_value,
+        )
+
+    def _update_marks_row(self, pid, field, value):
+        if pid not in self._marks_data:
+            return
+        self._marks_data[pid][field] = value
+        ca = self._marks_data[pid]["ca"]
+        exam = self._marks_data[pid]["exam"]
+        total = ca + exam
+        grade, _ = get_grade(total)
+        self.marks_tree.set(str(pid), field, value)
+        self.marks_tree.set(str(pid), "total", total)
+        self.marks_tree.set(str(pid), "grade", grade)
+
+    def _add_marks_for_selected(self):
+        sel = self.marks_tree.selection()
+        if not sel:
+            messagebox.showinfo("Select Pupil", "Please select a pupil row first.")
+            return
+
+        pid = int(sel[0])
+        current = self._marks_data.get(pid, {})
+        pupil_name = self.marks_tree.set(sel[0], "name")
+
+        dialog = tk.Toplevel(self)
+        dialog.title("Add Marks")
+        dialog.geometry("360x210")
+        dialog.resizable(False, False)
+        dialog.configure(bg=C["bg"])
+        dialog.transient(self)
+        dialog.grab_set()
+
+        card = tk.Frame(dialog, bg=C["card"], padx=16, pady=14)
+        card.pack(fill="both", expand=True, padx=14, pady=14)
+
+        tk.Label(card, text=f"Pupil: {pupil_name}", font=FONT_BOLD, bg=C["card"], fg=C["text"]).grid(
+            row=0, column=0, columnspan=2, sticky="w", pady=(0, 10)
+        )
+
+        tk.Label(card, text="CA Score (0-40)", font=FONT_BOLD, bg=C["card"], fg=C["text"]).grid(
+            row=1, column=0, sticky="w", padx=(0, 8), pady=4
+        )
+        ca_var = tk.StringVar(value=str(current.get("ca", 0)))
+        tk.Entry(
+            card,
+            textvariable=ca_var,
+            font=FONT,
+            width=12,
+            relief="flat",
+            highlightthickness=1,
+            highlightbackground=C["border"],
+            highlightcolor=C["accent"],
+        ).grid(row=1, column=1, sticky="w", pady=4, ipady=4)
+
+        tk.Label(card, text="Exam Score (0-60)", font=FONT_BOLD, bg=C["card"], fg=C["text"]).grid(
+            row=2, column=0, sticky="w", padx=(0, 8), pady=4
+        )
+        exam_var = tk.StringVar(value=str(current.get("exam", 0)))
+        tk.Entry(
+            card,
+            textvariable=exam_var,
+            font=FONT,
+            width=12,
+            relief="flat",
+            highlightthickness=1,
+            highlightbackground=C["border"],
+            highlightcolor=C["accent"],
+        ).grid(row=2, column=1, sticky="w", pady=4, ipady=4)
+
+        btn_row = tk.Frame(card, bg=C["card"])
+        btn_row.grid(row=3, column=0, columnspan=2, sticky="w", pady=(14, 0))
+
+        def submit():
+            try:
+                ca = float(ca_var.get())
+                exam = float(exam_var.get())
+            except ValueError:
+                messagebox.showwarning("Invalid Input", "Enter numeric values for CA and Exam.", parent=dialog)
+                return
+
+            if not (0 <= ca <= 40):
+                messagebox.showwarning("Invalid CA", "CA score must be between 0 and 40.", parent=dialog)
+                return
+            if not (0 <= exam <= 60):
+                messagebox.showwarning("Invalid Exam", "Exam score must be between 0 and 60.", parent=dialog)
+                return
+
+            self._update_marks_row(pid, "ca", ca)
+            self._update_marks_row(pid, "exam", exam)
+            dialog.destroy()
+
+        self._btn(btn_row, "Save", submit, color=C["accent2"]).pack(side="left")
+        self._btn(btn_row, "Cancel", dialog.destroy, color=C["light"]).pack(side="left", padx=(8, 0))
+
+        dialog.bind("<Return>", lambda _e: submit())
+        dialog.bind("<Escape>", lambda _e: dialog.destroy())
+
+    def _edit_selected_ca(self):
+        sel = self.marks_tree.selection()
+        if not sel:
+            messagebox.showinfo("Select Pupil", "Please select a pupil row first.")
+            return
+        pid = int(sel[0])
+        current = self._marks_data.get(pid, {}).get("ca", 0)
+        val = self._prompt_mark("CA Score (max 40)", current, 40)
+        if val is None:
+            return
+        self._update_marks_row(pid, "ca", val)
+
+    def _edit_selected_exam(self):
+        sel = self.marks_tree.selection()
+        if not sel:
+            messagebox.showinfo("Select Pupil", "Please select a pupil row first.")
+            return
+        pid = int(sel[0])
+        current = self._marks_data.get(pid, {}).get("exam", 0)
+        val = self._prompt_mark("Exam Score (max 60)", current, 60)
+        if val is None:
+            return
+        self._update_marks_row(pid, "exam", val)
+
+    def _open_add_marks_on_double_click(self, event):
+        item = self.marks_tree.identify_row(event.y)
+        if not item:
+            return
+        self.marks_tree.selection_set(item)
+        self.marks_tree.focus(item)
+        self._add_marks_for_selected()
+
     def _edit_marks_cell(self, event):
         item = self.marks_tree.identify_row(event.y)
         col  = self.marks_tree.identify_column(event.x)
@@ -517,19 +660,10 @@ class MainApp(tk.Tk):
         data = self._marks_data.get(pid, {})
         field = "CA Score (max 40)" if col == "#3" else "Exam Score (max 60)"
         current = data.get("ca" if col == "#3" else "exam", 0)
-        val = simpledialog.askfloat(field, f"Enter {field}:", initialvalue=current,
-                                    minvalue=0, maxvalue=40 if col == "#3" else 60)
+        val = self._prompt_mark(field, current, 40 if col == "#3" else 60)
         if val is None:
             return
-        key = "ca" if col == "#3" else "exam"
-        self._marks_data[pid][key] = val
-        ca   = self._marks_data[pid]["ca"]
-        exam = self._marks_data[pid]["exam"]
-        total = ca + exam
-        g, _ = get_grade(total)
-        self.marks_tree.set(item, "ca" if col == "#3" else "exam", val)
-        self.marks_tree.set(item, "total", total)
-        self.marks_tree.set(item, "grade", g)
+        self._update_marks_row(pid, "ca" if col == "#3" else "exam", val)
 
     def _save_all_marks(self):
         if not self._marks_data:
