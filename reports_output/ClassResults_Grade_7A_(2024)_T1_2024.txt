@@ -5,7 +5,8 @@
   POS  ADMISSION   NAME                        AVG    GRADE  REMARK
 ======================================================================
   1    PRMS0004    taonga mwanza               0.0    F      Fail
-  2    PRMS0003    stephen zulu                0.0    F      Fail
+  2    PRMS0005    john phiri                  0.0    F      Fail
+  3    PRMS0003    stephen zulu                0.0    F      Fail
 ======================================================================
-  Total pupils: 2
+  Total pupils: 3
 ======================================================================

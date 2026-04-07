@@ -452,12 +452,14 @@ class MainApp(tk.Tk):
         cb_subj.grid(row=0, column=7, padx=(0,12))
         if subj_labels: cb_subj.current(0)
 
-        self._btn(filt, "Load Pupils", self._load_marks_table,
-                  color=C["accent"]).grid(row=0, column=8, padx=(0,8))
-        self._btn(filt, "➕ Add Marks", self._add_marks_for_selected,
-              color="#0EA5E9").grid(row=0, column=9, padx=(0,8))
-        self._btn(filt, "💾 Save All", self._save_all_marks,
-              color=C["accent2"]).grid(row=0, column=10)
+        actions_row = tk.Frame(filt, bg=C["card"])
+        actions_row.grid(row=1, column=0, columnspan=8, sticky="w", pady=(10, 0))
+        self._btn(actions_row, "Load Pupils", self._load_marks_table,
+              color=C["accent"]).pack(side="left", padx=(0, 8))
+        self._btn(actions_row, "➕ Add Marks", self._add_marks_for_selected,
+              color="#0EA5E9").pack(side="left", padx=(0, 8))
+        self._btn(actions_row, "💾 Save All", self._save_all_marks,
+              color=C["accent2"]).pack(side="left")
 
         tk.Label(
             filt,
@@ -465,7 +467,7 @@ class MainApp(tk.Tk):
             font=FONT_SM,
             bg=C["card"],
             fg=C["light"]
-        ).grid(row=1, column=0, columnspan=11, sticky="w", pady=(10, 0))
+        ).grid(row=2, column=0, columnspan=8, sticky="w", pady=(10, 0))
 
         # Marks table
         tbl_wrap = tk.Frame(body, bg=C["card"])
