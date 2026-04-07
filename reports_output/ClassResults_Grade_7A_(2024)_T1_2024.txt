@@ -1,11 +1,11 @@
 ======================================================================
                 PUPIL RESULTS MANAGEMENT SYSTEM (PRMS)                
-        CLASS RESULTS SHEET â€” Grade 7A (2024) | TERM 1 | 2024         
+        CLASS RESULTS SHEET — Grade 7A (2024) | TERM 1 | 2024         
 ======================================================================
   POS  ADMISSION   NAME                        AVG    GRADE  REMARK
 ======================================================================
-  1    PRMS0001    Thandiwe Banda              84.0   A      Distinction
-  2    PRMS0002    Chisomo Phiri               64.0   C      Credit
+  1    PRMS0004    taonga mwanza               0.0    F      Fail
+  2    PRMS0003    stephen zulu                0.0    F      Fail
 ======================================================================
   Total pupils: 2
 ======================================================================
