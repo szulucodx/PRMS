@@ -454,8 +454,10 @@ class MainApp(tk.Tk):
 
         self._btn(filt, "Load Pupils", self._load_marks_table,
                   color=C["accent"]).grid(row=0, column=8, padx=(0,8))
+        self._btn(filt, "➕ Add Marks", self._add_marks_for_selected,
+              color="#0EA5E9").grid(row=0, column=9, padx=(0,8))
         self._btn(filt, "💾 Save All", self._save_all_marks,
-                  color=C["accent2"]).grid(row=0, column=9)
+              color=C["accent2"]).grid(row=0, column=10)
 
         tk.Label(
             filt,
@@ -463,7 +465,7 @@ class MainApp(tk.Tk):
             font=FONT_SM,
             bg=C["card"],
             fg=C["light"]
-        ).grid(row=1, column=0, columnspan=10, sticky="w", pady=(10, 0))
+        ).grid(row=1, column=0, columnspan=11, sticky="w", pady=(10, 0))
 
         # Marks table
         tbl_wrap = tk.Frame(body, bg=C["card"])
@@ -490,7 +492,6 @@ class MainApp(tk.Tk):
 
         actions = tk.Frame(body, bg=C["bg"], pady=8)
         actions.pack(fill="x")
-        self._btn(actions, "➕ Add Marks", self._add_marks_for_selected, color=C["accent"]).pack(side="left")
         self._btn(actions, "✏️ Edit Selected CA", self._edit_selected_ca, color="#D97706").pack(side="left")
         self._btn(actions, "✏️ Edit Selected Exam", self._edit_selected_exam, color="#7C3AED").pack(side="left", padx=(8, 0))
 
