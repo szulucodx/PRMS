@@ -1,6 +1,6 @@
 ======================================================================
                 PUPIL RESULTS MANAGEMENT SYSTEM (PRMS)                
-        CLASS RESULTS SHEET — Grade 7A (2024) | TERM 1 | 2024         
+        CLASS RESULTS SHEET - Grade 7A (2024) | TERM 1 | 2024         
 ======================================================================
   POS  ADMISSION   NAME                        AVG    GRADE  REMARK
 ======================================================================
